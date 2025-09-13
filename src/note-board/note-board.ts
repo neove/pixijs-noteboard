@@ -73,6 +73,7 @@ class NoteBoard extends Application {
     this.stage.on("pointermove", this.onPointerMove, this);
     this.stage.on("pointerup", this.onPointerUp, this);
     this.stage.on("pointerupoutside", this.onPointerUp, this);
+    this.onLoad?.();
   }
 
   private onWheel(event: WheelEvent) {
@@ -136,6 +137,7 @@ class NoteBoard extends Application {
   }
 
   private onPointerMove(event: FederatedPointerEvent) {
+    console.log("onPointerMove");
     const globalPos = event.global;
     const rootContainerPos = this.rootContainer.localTransform.applyInverse(
       copyPoint(globalPos)
@@ -191,7 +193,7 @@ class NoteBoard extends Application {
       const dy = curPoint.y - startPoint.y;
       const { x: ox, y: oy } = this.curDragTargetOriginalPos;
       this.curDragTarget.position.set(ox + dx, oy + dy);
-      this.curDragTarget.updateTransform();
+      // this.curDragTarget.updateTransform();
     }
   }
 
@@ -382,7 +384,7 @@ class NoteBoard extends Application {
       0,
       0
     );
-    this.rootContainer.updateTransform();
+    // this.rootContainer.updateTransform();
   }
   getObjectStageBound(obj: DisplayObject) {
     const localBounds = obj.getLocalBounds();
@@ -448,13 +450,13 @@ class NoteBoard extends Application {
   whiteboardResize(w: number, h: number) {
     if (!this.renderer) return;
     this.renderer.resize(w, h);
-    if (!this.viewClientRect) {
-      this.ticker?.addOnce(() => {
-        setTimeout(() => {
-          this.onLoad?.();
-        }, 300);
-      });
-    }
+    // if (!this.viewClientRect) {
+    //   this.ticker?.addOnce(() => {
+    //     setTimeout(() => {
+    //       this.onLoad?.();
+    //     }, 300);
+    //   });
+    // }
     this.stage.hitArea = new Rectangle(0, 0, w, h);
     this.viewClientRect = (
       this.view as HTMLCanvasElement

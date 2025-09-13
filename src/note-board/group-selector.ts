@@ -9,7 +9,7 @@ export class GroupSelector extends Container {
   }
   setXAndY(x: number, y: number) {
     this.position.set(x, y);
-    this.transform.updateTransform(new Transform());
+    // this.transform.updateTransform(new Transform());
   }
   addChildrenFromRootContainer(objList: DisplayObject[]) {
     this.addChild(...objList);
@@ -33,7 +33,9 @@ export class GroupSelector extends Container {
       const finalMatrix = groupSelectorMatrix
         .clone()
         .append(obj.localTransform);
-      obj.transform.setFromMatrix(finalMatrix);
+      // obj.transform.setFromMatrix(finalMatrix);
+      obj.localTransform.copyFrom(finalMatrix);
+
     });
   }
 }

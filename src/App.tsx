@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import './App.css';
-import { debounce } from 'lodash';
-import { NoteBoard } from './note-board/note-board';
-import { init } from './init';
-import { Radio } from 'antd';
-import { Tool } from './note-board/enums';
+import React, { useState, useEffect } from "react";
+import "./App.css";
+import { debounce } from "lodash";
+import { NoteBoard } from "./note-board/note-board";
+import { init } from "./init";
+import { Radio } from "antd";
+import { Tool } from "./note-board/enums";
 
 function App() {
   const [noteBoard, setNoteBoard] = useState<NoteBoard | null>(null);
@@ -21,10 +21,10 @@ function App() {
         height: document.body.clientHeight,
       });
     }, 100);
-    window.addEventListener('resize', onResize);
+    window.addEventListener("resize", onResize);
     onResize();
     return () => {
-      window.removeEventListener('resize', onResize);
+      window.removeEventListener("resize", onResize);
     };
   }, []);
 
@@ -43,7 +43,7 @@ function App() {
   return (
     <>
       <div id="canvas-wrapper">
-        <canvas id="pixi-view" style={{ width, height, userSelect: 'none' }} />
+        <canvas id="pixi-view" style={{ width, height, userSelect: "none" }} />
       </div>
       {noteBoard && (
         <div className="top-bar">

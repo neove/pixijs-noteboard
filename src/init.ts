@@ -11,7 +11,7 @@ export function init(w: number, h: number) {
     view: document.getElementById('pixi-view') as HTMLCanvasElement,
   });
   noteBoard.onNoteBoardLoad(() => {
-    for (let i = 0; i < 500; i++) {
+    for (let i = 0; i < 1000; i++) {
       const randomX = Math.random();
       const randomY = Math.random();
       const text = createText();
