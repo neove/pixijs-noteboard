@@ -450,6 +450,9 @@ class NoteBoard extends Application {
   whiteboardResize(w: number, h: number) {
     if (!this.renderer) return;
     this.renderer.resize(w, h);
+    this.stage.eventMode = "static";
+    this.stage.hitArea = new Rectangle(0, 0, w, h);
+
     // if (!this.viewClientRect) {
     //   this.ticker?.addOnce(() => {
     //     setTimeout(() => {
