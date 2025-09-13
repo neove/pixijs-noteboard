@@ -9,14 +9,15 @@ import {
   Text,
   Container,
   Rectangle,
-} from 'pixi.js';
-import { Tool } from './enums';
-import { copyPoint } from './utils';
-import { ControlPoint } from './control-point';
-import { SelectorTool } from './selector-tool';
-import { Box } from './type';
-import { GroupSelector } from './group-selector';
-import { MyText } from './text';
+  Ticker,
+} from "pixi.js";
+import { Tool } from "./enums";
+import { copyPoint } from "./utils";
+import { ControlPoint } from "./control-point";
+import { SelectorTool } from "./selector-tool";
+import { Box } from "./type";
+import { GroupSelector } from "./group-selector";
+import { MyText } from "./text";
 
 class NoteBoard extends Application {
   private onLoad?: () => void;
@@ -31,7 +32,7 @@ class NoteBoard extends Application {
   private curDragTarget?: DisplayObject;
   private curDragTargetOriginalPos = new Point(0, 0);
   private activeObject?: DisplayObject;
-  private activeObjBorder: Graphics | null=null;
+  private activeObjBorder: Graphics | null = null;
   private activeObjControlPoint?: ControlPoint;
   private rotatingActiveObject = false;
   private originalAngle = 0;
@@ -40,235 +41,223 @@ class NoteBoard extends Application {
   private groupSelector?: GroupSelector;
   private lastPointerUpTime = 0;
   private textEditor?: HTMLDivElement;
-  public rootContainer = new Container()
+  public rootContainer = new Container();
+
   constructor(args: Partial<IApplicationOptions>) {
     super(args);
+    this.initApp(args);
+  }
 
-    // window.__PIXI_APP__ = this;
+  async initApp(args: Partial<IApplicationOptions>) {
+    await this.init(args);
+    this.ticker = Ticker.shared;
 
-    this.stage.eventMode='static'
-    this.rootContainer.eventMode = 'static'
-    this.stage.addChild(this.rootContainer)
+    this.stage.eventMode = "static";
+    this.rootContainer.eventMode = "static";
+    this.stage.addChild(this.rootContainer);
 
     this.addStageBorder();
-    // this.ticker.add(this.updateStageBorder);
-    this.ticker.add(this.updateActiveTargetBorder);
-    this.ticker.add(this.updateActiveTargetControlPoint);
-    this.ticker.add(this.updateTextEditor);
 
-    (this.view as HTMLCanvasElement).addEventListener('wheel', (event) => {
-      if (this.viewClientRect) {
-        const { x, y } = this.viewClientRect;
-        const globalPos = new Point(event.clientX - x, event.clientY - y);
-        const delta = event.deltaY;
-        const oldZoom = this.getZoom();
-        let newZoom = oldZoom * 0.999 ** delta;
-        if (newZoom > this.maxZoom) newZoom = this.maxZoom;
-        if (newZoom < this.minZoom) newZoom = this.minZoom;
-        this.applyZoom(oldZoom, newZoom, globalPos);
-      }
-    });
+    // Ticker回调绑定this
+    this.ticker.add(this.updateActiveTargetBorder, this);
+    this.ticker.add(this.updateActiveTargetControlPoint, this);
+    this.ticker.add(this.updateTextEditor, this);
 
-    this.stage.on(
-      'pointerdown',
-      (event: FederatedPointerEvent) => {
-        const globalPos = event.global;
-        this.rootContainerOriginalPos = copyPoint(this.rootContainer.position);
-        this.mouseDownPoint = copyPoint(globalPos);
-
-        if (this.textEditor) {
-          this.deleteTextEditor();
-        }
-
-        if (event.target === this.stage) {
-          // 点到了画布的空白位置
-
-          this.touchBlank = true;
-          this.removeActiveObject();
-
-          if (this.groupSelector) {
-            this.groupSelector.putChildrenBackToRootContainer(this.rootContainer);
-            this.rootContainer.removeChild(this.groupSelector);
-            this.removeActiveObject();
-          }
-
-          if (this.curTool === Tool.Selector) {
-            const rootContainerPos = this.rootContainer.localTransform
-              .clone()
-              .applyInverse(copyPoint(globalPos));
-            this.selectorTool = new SelectorTool(this, rootContainerPos);
-          }
-        } else {
-          if (event.target instanceof ControlPoint) {
-            this.rotatingActiveObject = true;
-            this.originalAngle = event.target.controlTarget.angle;
-            const bound = this.getObjectStageBound(this.activeObject!);
-            const [tl, _tr, br, _bl] = bound;
-            this.originalCenter = new Point(
-              (tl.x + br.x) / 2,
-              (tl.y + br.y) / 2
-            )
-            return
-          }
-          
-          if (event.target instanceof MyText || event.target instanceof GroupSelector) {
-            this.curDragTarget = event.target;
-            this.curDragTargetOriginalPos = copyPoint(event.target.position);
-
-            if (this.activeObject && this.activeObject === event.target) {
-              // 如果点击的对象是当前的activeObject，则什么都不做
-            } else {
-              this.removeActiveObject();
-              if (this.groupSelector) {
-                this.groupSelector.putChildrenBackToRootContainer(this.rootContainer);
-                this.rootContainer.removeChild(this.groupSelector);
-              }
-              this.setActiveObject(event.target);
-            }
-          }
-        }
-      }
+    // 滚轮缩放
+    (this.view as HTMLCanvasElement).addEventListener("wheel", (event) =>
+      this.onWheel(event)
     );
-    this.stage.on(
-      'pointermove',
-      (event: FederatedPointerEvent) => {
-        const globalPos = event.global;
-        const rootContainerPos = this.rootContainer.localTransform.applyInverse(
-          copyPoint(globalPos)
-        );
 
-        if (this.touchBlank) {
-          if (this.curTool === Tool.Pointer) {
-            // 拖拽画布
-            const dx = globalPos.x - this.mouseDownPoint.x;
-            const dy = globalPos.y - this.mouseDownPoint.y;
-            this.rootContainer.position.set(
-              this.rootContainerOriginalPos.x + dx,
-              this.rootContainerOriginalPos.y + dy
-            );
-          }
+    // 鼠标事件
+    this.stage.on("pointerdown", this.onPointerDown, this);
+    this.stage.on("pointermove", this.onPointerMove, this);
+    this.stage.on("pointerup", this.onPointerUp, this);
+    this.stage.on("pointerupoutside", this.onPointerUp, this);
+  }
 
-          if (this.curTool === Tool.Selector) {
-            this.selectorTool?.move(rootContainerPos);
-          }
-        }
-        if (this.rotatingActiveObject) {
-          // 拖拽控制点
-          const pointerDownStagePos = this.rootContainer.localTransform.applyInverse(
-            this.mouseDownPoint
-          );
-          const curPointerStagePos =
-            this.rootContainer.localTransform.applyInverse(globalPos);
+  private onWheel(event: WheelEvent) {
+    if (!this.viewClientRect) return;
+    const { x, y } = this.viewClientRect;
+    const globalPos = new Point(event.clientX - x, event.clientY - y);
+    const delta = event.deltaY;
 
-          const v1 = new Point(
-            pointerDownStagePos.x - this.originalCenter.x,
-            pointerDownStagePos.y - this.originalCenter.y
-          );
-          const v2 = new Point(
-            curPointerStagePos.x - this.originalCenter.x,
-            curPointerStagePos.y - this.originalCenter.y
-          );
+    const oldZoom = this.getZoom();
+    let newZoom = oldZoom * 0.999 ** delta;
+    newZoom = Math.min(Math.max(newZoom, this.minZoom), this.maxZoom);
 
-          // 计算v1向量和v2向量的夹角
-          const v1mv2 = v1.x * v2.x + v1.y * v2.y; // v1和v2的点积
-          const modV1V2 =
-            Math.sqrt(Math.pow(v1.x, 2) + Math.pow(v1.y, 2)) *
-            Math.sqrt(Math.pow(v2.x, 2) + Math.pow(v2.y, 2));
-          const cos = v1mv2 / modV1V2; // v1向量和v2向量的夹角的cos值
-          const angle = (180 * Math.acos(cos)) / Math.PI;
+    this.applyZoom(oldZoom, newZoom, globalPos);
+  }
 
-          // 判断应该顺时针 旋转还是逆时针旋转(这里注意：坐标系是倒过来的)
-          const v2xv1 = v2.x * v1.y - v2.y * v1.x; // v1向量和v2向量的叉积
-          const dAngle = v2xv1 > 0 ? -angle : angle; // 叉积为正说明v1向量在v2向量的顺时针方向
+  private onPointerDown(event: FederatedPointerEvent) {
+    const globalPos = event.global;
+    this.rootContainerOriginalPos = copyPoint(this.rootContainer.position);
+    this.mouseDownPoint = copyPoint(globalPos);
 
-          this.setActiveObjAngle((this.originalAngle + dAngle) % 360);
-        }
-        if (this.curDragTarget) {
-          // 拖拽单个对象
-          const startPoint = this.rootContainer.localTransform
-            .clone()
-            .applyInverse(this.mouseDownPoint);
-          const curPoint = this.rootContainer.localTransform
-            .clone()
-            .applyInverse(globalPos);
-          const dx = curPoint.x - startPoint.x;
-          const dy = curPoint.y - startPoint.y;
-          const { x: originalX, y: originalY } = this.curDragTargetOriginalPos;
-          this.curDragTarget.position.set(originalX + dx, originalY + dy);
-          this.curDragTarget.updateTransform();
-        }
-      }
-    );
-    const handlePointerUp = (event: FederatedPointerEvent) => {
-      this.touchBlank = false;
-      this.curDragTarget = undefined;
-      this.rotatingActiveObject = false;
+    if (this.textEditor) this.deleteTextEditor();
 
-      if (this.selectorTool) {
-        this.selectorTool.end();
-        this.selectorTool = undefined;
+    if (event.target === this.stage) {
+      this.touchBlank = true;
+      this.removeActiveObject();
+
+      if (this.groupSelector) {
+        this.groupSelector.putChildrenBackToRootContainer(this.rootContainer);
+        this.rootContainer.removeChild(this.groupSelector);
+        this.removeActiveObject();
       }
 
-      const now = Date.now();
-      const isDoubleClick = now - this.lastPointerUpTime < 200;
-      this.lastPointerUpTime = now;
-      if (isDoubleClick) {
-        this.handleDoubleClick(event);
+      if (this.curTool === Tool.Selector) {
+        const rootPos = this.rootContainer.localTransform
+          .clone()
+          .applyInverse(copyPoint(globalPos));
+        this.selectorTool = new SelectorTool(this, rootPos);
+      }
+    } else if (event.target instanceof ControlPoint) {
+      this.rotatingActiveObject = true;
+      this.originalAngle = event.target.controlTarget.angle;
+      const bound = this.getObjectStageBound(this.activeObject!);
+      const [tl, , br] = bound;
+      this.originalCenter = new Point((tl.x + br.x) / 2, (tl.y + br.y) / 2);
+    } else if (
+      event.target instanceof MyText ||
+      event.target instanceof GroupSelector
+    ) {
+      this.curDragTarget = event.target;
+      this.curDragTargetOriginalPos = copyPoint(event.target.position);
+
+      if (this.activeObject !== event.target) {
+        this.removeActiveObject();
+        if (this.groupSelector) {
+          this.groupSelector.putChildrenBackToRootContainer(this.rootContainer);
+          this.rootContainer.removeChild(this.groupSelector);
+        }
+        this.setActiveObject(event.target);
       }
     }
-    this.stage.on('pointerup',handlePointerUp);
-    this.stage.on('pointerupoutside',handlePointerUp)
   }
+
+  private onPointerMove(event: FederatedPointerEvent) {
+    const globalPos = event.global;
+    const rootContainerPos = this.rootContainer.localTransform.applyInverse(
+      copyPoint(globalPos)
+    );
+
+    if (this.touchBlank && this.curTool === Tool.Pointer) {
+      const dx = globalPos.x - this.mouseDownPoint.x;
+      const dy = globalPos.y - this.mouseDownPoint.y;
+      this.rootContainer.position.set(
+        this.rootContainerOriginalPos.x + dx,
+        this.rootContainerOriginalPos.y + dy
+      );
+    }
+
+    if (this.touchBlank && this.curTool === Tool.Selector) {
+      this.selectorTool?.move(rootContainerPos);
+    }
+
+    if (this.rotatingActiveObject) {
+      const pointerDownStagePos =
+        this.rootContainer.localTransform.applyInverse(this.mouseDownPoint);
+      const curPointerStagePos =
+        this.rootContainer.localTransform.applyInverse(globalPos);
+
+      const v1 = new Point(
+        pointerDownStagePos.x - this.originalCenter.x,
+        pointerDownStagePos.y - this.originalCenter.y
+      );
+      const v2 = new Point(
+        curPointerStagePos.x - this.originalCenter.x,
+        curPointerStagePos.y - this.originalCenter.y
+      );
+
+      const cos =
+        (v1.x * v2.x + v1.y * v2.y) /
+        (Math.sqrt(v1.x ** 2 + v1.y ** 2) * Math.sqrt(v2.x ** 2 + v2.y ** 2));
+      const angle = (180 * Math.acos(Math.min(Math.max(cos, -1), 1))) / Math.PI;
+
+      const cross = v2.x * v1.y - v2.y * v1.x;
+      const dAngle = cross > 0 ? -angle : angle;
+
+      this.setActiveObjAngle((this.originalAngle + dAngle) % 360);
+    }
+
+    if (this.curDragTarget) {
+      const startPoint = this.rootContainer.localTransform
+        .clone()
+        .applyInverse(this.mouseDownPoint);
+      const curPoint = this.rootContainer.localTransform
+        .clone()
+        .applyInverse(globalPos);
+      const dx = curPoint.x - startPoint.x;
+      const dy = curPoint.y - startPoint.y;
+      const { x: ox, y: oy } = this.curDragTargetOriginalPos;
+      this.curDragTarget.position.set(ox + dx, oy + dy);
+      this.curDragTarget.updateTransform();
+    }
+  }
+
+  private onPointerUp(event: FederatedPointerEvent) {
+    this.touchBlank = false;
+    this.curDragTarget = undefined;
+    this.rotatingActiveObject = false;
+
+    if (this.selectorTool) {
+      this.selectorTool.end();
+      this.selectorTool = undefined;
+    }
+
+    const now = Date.now();
+    const isDoubleClick = now - this.lastPointerUpTime < 200;
+    this.lastPointerUpTime = now;
+    if (isDoubleClick) this.handleDoubleClick(event);
+  }
+
   createTextEditor(textTarget: Text) {
     textTarget.visible = false;
-    const editor = document.createElement('div');
-    editor.contentEditable = 'plaintext-only';
-    editor.style.position = 'fixed';
-    editor.classList.add('whiteboard-editor');
+    const editor = document.createElement("div");
+    editor.contentEditable = "plaintext-only";
+    editor.style.position = "fixed";
+    editor.classList.add("whiteboard-editor");
     editor.style.color = `${textTarget.style.fill}`;
-    editor.style.fontFamily = `OpenSans, Arial, sans-serif, "Noto Sans Hebrew", "Noto Sans", "Noto Sans JP", "Noto Sans KR"`;
-    editor.style.transformOrigin = 'left top';
-    editor.style.fontWeight = '400';
+    editor.style.fontFamily =
+      'OpenSans, Arial, sans-serif, "Noto Sans Hebrew", "Noto Sans", "Noto Sans JP", "Noto Sans KR"';
+    editor.style.transformOrigin = "left top";
+    editor.style.fontWeight = "400";
     editor.innerText = textTarget.text;
     document.body.appendChild(editor);
     editor.focus();
     this.textEditor = editor;
+
     editor.oninput = () => {
       textTarget.text = editor.innerText;
-      // textTarget.updateTransform();
     };
   }
-  updateTextEditor = () => {
-    if (this.textEditor) {
-      const text = this.activeObject as Text;
-      if (!text) {
-        return;
-      }
 
-      // text.updateTransform();
+  updateTextEditor = (delta?: number) => {
+    if (!this.textEditor) return;
+    const text = this.activeObject as Text;
+    if (!text) return;
 
-      const clientBounding = this.viewClientRect as DOMRect;
-      this.textEditor.style.left = `${clientBounding.x}px`;
-      this.textEditor.style.top = `${clientBounding.y}px`;
-      this.textEditor.style.fontSize = `14px`;
-      this.textEditor.style.lineHeight = `${14 * 1.2}px`;
+    const clientBounding = this.viewClientRect as DOMRect;
+    this.textEditor.style.left = `${clientBounding.x}px`;
+    this.textEditor.style.top = `${clientBounding.y}px`;
+    this.textEditor.style.fontSize = `14px`;
+    this.textEditor.style.lineHeight = `${14 * 1.2}px`;
 
-      const { a, b, c, d, tx, ty } = text.worldTransform;
-      this.textEditor.style.transform = `matrix(${a},${b},${c},${d},${tx},${ty})`;
-    }
+    const { a, b, c, d, tx, ty } = text.worldTransform;
+    this.textEditor.style.transform = `matrix(${a},${b},${c},${d},${tx},${ty})`;
   };
-  deleteTextEditor = () => {
-    const textEditor = this.textEditor!;
-    document.body.removeChild(textEditor);
 
+  deleteTextEditor = () => {
+    if (!this.textEditor) return;
+    document.body.removeChild(this.textEditor);
     const textObj = this.activeObject as Text;
     textObj.visible = true;
     this.textEditor = undefined;
   };
+
   handleDoubleClick(event: FederatedPointerEvent) {
-    const { target } = event;
-    if (target instanceof Text) {
-      this.createTextEditor(target);
+    if (event.target instanceof Text) {
+      this.createTextEditor(event.target);
     }
   }
   getObjectListLeftTop(objList: DisplayObject[]) {
@@ -342,8 +331,8 @@ class NoteBoard extends Application {
   addActiveTargetControlPoint(activeObj: DisplayObject) {
     const controlPoint = new ControlPoint(activeObj);
     this.activeObjControlPoint = controlPoint;
-    controlPoint.eventMode = 'static';
-    controlPoint.cursor = 'pointer';
+    controlPoint.eventMode = "static";
+    controlPoint.cursor = "pointer";
     this.rootContainer.addChild(controlPoint);
     controlPoint.lineStyle(2 / this.getZoom(), 0xc66965);
     const radius = 5 / this.getZoom();
@@ -393,7 +382,7 @@ class NoteBoard extends Application {
       0,
       0
     );
-    this.rootContainer.updateTransform()
+    this.rootContainer.updateTransform();
   }
   getObjectStageBound(obj: DisplayObject) {
     const localBounds = obj.getLocalBounds();
@@ -457,15 +446,16 @@ class NoteBoard extends Application {
     this.onLoad = onLoad;
   };
   whiteboardResize(w: number, h: number) {
+    if (!this.renderer) return;
     this.renderer.resize(w, h);
     if (!this.viewClientRect) {
-      this.ticker.addOnce(() => {
+      this.ticker?.addOnce(() => {
         setTimeout(() => {
           this.onLoad?.();
         }, 300);
       });
     }
-    this.stage.hitArea=new Rectangle(0,0,w,h)
+    this.stage.hitArea = new Rectangle(0, 0, w, h);
     this.viewClientRect = (
       this.view as HTMLCanvasElement
     ).getBoundingClientRect();
