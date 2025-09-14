@@ -234,12 +234,16 @@ const FlowView = ({ nodes, edges, setNodes, controlMode }: IFlowViewProps) => {
             .fill(SELECTION_BOX_STYLE.fill)
             .stroke(SELECTION_BOX_STYLE.stroke);
           // 计算选中的节点
-          const currentSelectedNodes = getSelectedNodes(nodesRef.current, {
-            x,
-            y,
-            width,
-            height,
-          });
+          const currentSelectedNodes = getSelectedNodes(
+            nodesRef.current,
+            {
+              x,
+              y,
+              width,
+              height,
+            },
+            viewportRef.current
+          );
           // 清除上一次选中的节点
           selectedNodesRef.current.forEach((node) => {
             const container = nodeContainerMap.current.get(node.id);

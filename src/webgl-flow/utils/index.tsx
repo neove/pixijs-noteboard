@@ -1,4 +1,4 @@
-import type { Node } from "@xyflow/react";
+import type { Node, Viewport } from "@xyflow/react";
 
 /**
  * 计算哪些节点被选区完全包含
@@ -15,6 +15,7 @@ import type { Node } from "@xyflow/react";
 export function getSelectedNodes(
   nodes: Node[],
   selection: { x: number; y: number; width: number; height: number },
+  viewport: Viewport,
   isPartial = true
 ): Node[] {
   return nodes.filter((node) => {
@@ -27,22 +28,26 @@ export function getSelectedNodes(
       width: node.width,
       height: node.height,
     };
+    // @ts-ignore
+    const zoom = viewport.scale.x;
 
     if (isPartial) {
       // 部分相交即可
       return !(
-        nodeBounds.x + nodeBounds.width < selection.x ||
-        nodeBounds.x > selection.x + selection.width ||
-        nodeBounds.y + nodeBounds.height < selection.y ||
-        nodeBounds.y > selection.y + selection.height
+        nodeBounds.x * zoom + nodeBounds.width * zoom < selection.x * zoom ||
+        nodeBounds.x * zoom > selection.x * zoom + selection.width * zoom ||
+        nodeBounds.y * zoom + nodeBounds.height * zoom < selection.y * zoom ||
+        nodeBounds.y * zoom > selection.y * zoom + selection.height * zoom
       );
     } else {
       // 完全包含
       return (
-        nodeBounds.x >= selection.x &&
-        nodeBounds.y >= selection.y &&
-        nodeBounds.x + nodeBounds.width <= selection.x + selection.width &&
-        nodeBounds.y + nodeBounds.height <= selection.y + selection.height
+        nodeBounds.x * zoom >= selection.x &&
+        nodeBounds.y * zoom >= selection.y &&
+        nodeBounds.x * zoom + nodeBounds.width * zoom <=
+          selection.x * zoom + selection.width * zoom &&
+        nodeBounds.y * zoom + nodeBounds.height * zoom <=
+          selection.y * zoom + selection.height * zoom
       );
     }
   });
