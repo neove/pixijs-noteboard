@@ -1,5 +1,5 @@
 import { Node } from "@xyflow/react";
-import { Container, Graphics, Text } from "pixi.js";
+import { Container, Graphics, Text, HTMLText, Texture, Assets } from "pixi.js";
 import { extend } from "@pixi/react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
@@ -7,6 +7,7 @@ extend({
   Container,
   Graphics,
   Text,
+  HtmlText: HTMLText,
 });
 
 interface INodeRendererProps {
@@ -26,6 +27,12 @@ export const NodeRenderer = memo(
     nodePosition,
     setNodeContainer,
   }: INodeRendererProps) => {
+    const spriteRef = useRef(null);
+
+    const [texture, setTexture] = useState(Texture.EMPTY);
+    const [isHovered, setIsHover] = useState(false);
+    const [isActive, setIsActive] = useState(false);
+
     const containerRef = useRef<Container>(null);
     const draw = useCallback(
       (graphics: Graphics) => {
@@ -53,6 +60,15 @@ export const NodeRenderer = memo(
       }
     }, [node.id, setNodeContainer]);
     console.log("render node", node.data?.label);
+
+    // Preload the sprite if it hasn't been loaded yet
+    useEffect(() => {
+      if (texture === Texture.EMPTY) {
+        Assets.load("https://myflexnote.com/images/main.png").then((result) => {
+          setTexture(result);
+        });
+      }
+    }, [texture]);
     return (
       <pixiContainer
         ref={containerRef}
@@ -67,14 +83,18 @@ export const NodeRenderer = memo(
         }}
       >
         <pixiGraphics draw={draw} />
-        <pixiText
-          text={node.data?.label as string}
-          style={{
-            fontSize: 12,
-            x: 10,
-            y: 10,
-          }}
-        />
+        {/* <pixiSprite
+          ref={spriteRef}
+          eventMode={"static"}
+          onClick={(event) => setIsActive(!isActive)}
+          onPointerOver={(event) => setIsHover(true)}
+          onPointerOut={(event) => setIsHover(false)}
+          texture={texture}
+          x={0}
+          y={0}
+          width={node.width}
+          height={node.height}
+        /> */}
       </pixiContainer>
     );
   }

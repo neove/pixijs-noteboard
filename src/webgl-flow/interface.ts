@@ -9,4 +9,10 @@ export interface IFlowViewProps {
   nodes: Node[];
   edges: Edge[];
   setNodes: any;
+  controlMode: EControlMode;
+}
+
+export enum EControlMode {
+  DRAG = "drag",
+  SELECT = "select",
 }
