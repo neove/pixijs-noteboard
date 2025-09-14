@@ -1,3 +1,10 @@
+/***
+ * Container 的 height 和 width 是计算包含了所有子元素的 height 和 width
+ * 坐标转换
+ * * const localPos = viewport.toLocal(worldPos); // 将世界坐标转换为局部坐标
+ *
+ */
+
 import type { Node, Viewport } from "@xyflow/react";
 
 /**
@@ -88,4 +95,53 @@ export function calculateSelectionRect(
     width: maxX - minX,
     height: maxY - minY,
   };
+}
+
+interface NodeBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * 节点 a 是否完全在节点 b 内
+ */
+export function isNodeFullyInside(a: NodeBounds, b: NodeBounds): boolean {
+  return (
+    a.x >= b.x &&
+    a.y >= b.y &&
+    a.x + a.width <= b.x + b.width &&
+    a.y + a.height <= b.y + b.height
+  );
+}
+
+/**
+ * 节点 a 是否部分在节点 b 内（相交即可）
+ */
+export function isNodePartiallyInside(a: NodeBounds, b: NodeBounds): boolean {
+  return (
+    !(
+      (
+        a.x + a.width < b.x || // a 在 b 左边
+        a.x > b.x + b.width || // a 在 b 右边
+        a.y + a.height < b.y || // a 在 b 上方
+        a.y > b.y + b.height
+      ) // a 在 b 下方
+    ) &&
+    !isNodeFullyInside(a, b) &&
+    !isNodeFullyInside(b, a)
+  );
+}
+
+/**
+ * 节点 a 是否完全在节点 b 外
+ */
+export function isNodeFullyOutside(a: NodeBounds, b: NodeBounds): boolean {
+  return (
+    a.x + a.width <= b.x || // a 在 b 左边
+    a.x >= b.x + b.width || // a 在 b 右边
+    a.y + a.height <= b.y || // a 在 b 上方
+    a.y >= b.y + b.height // a 在 b 下方
+  );
 }

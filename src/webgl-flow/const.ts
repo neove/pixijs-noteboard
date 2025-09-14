@@ -8,6 +8,7 @@ export const SELECTED_NODE_BORDER_WIDTH = 2; // 选中的节点边框宽度
 export const NORMAL_NODE_BORDER_COLOR = "#fff"; // 普通节点边框颜色
 export const NORMAL_NODE_BORDER_WIDTH = 1; // 普通节点边框宽度
 
+export const SELECTED_NODE_INDEX = 1000; // 选中节点层级
 export const DEFAULT_NODE_STYLE = {
   fill: { color: "#ffffff" },
   stroke: { width: 2, color: "red" },

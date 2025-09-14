@@ -24,13 +24,10 @@ export const SelectionBox = ({
 }) => {
   const draw = useCallback((graphics: Graphics) => {
     graphics.clear();
-    graphics.rect(0, 0, 100, 100).stroke({
-      width: 1,
-      color: "red",
-    });
   }, []);
   return (
     <pixiGraphics
+      zIndex={1}
       onPointerDown={(e) => {
         e.stopPropagation();
         onPointerDown(e);
