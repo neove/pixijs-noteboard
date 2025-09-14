@@ -15,8 +15,12 @@ extend({
 
 export const SelectionBox = ({
   selectionBoxGraphicsRef,
+  onPointerDown = () => {},
+  onPointerUp = () => {},
 }: {
   selectionBoxGraphicsRef: React.RefObject<Graphics>;
+  onPointerDown?: (e: any) => void;
+  onPointerUp?: (e: any) => void;
 }) => {
   const draw = useCallback((graphics: Graphics) => {
     graphics.clear();
@@ -26,6 +30,17 @@ export const SelectionBox = ({
     });
   }, []);
   return (
-    <pixiGraphics ref={selectionBoxGraphicsRef} draw={draw}></pixiGraphics>
+    <pixiGraphics
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        onPointerDown(e);
+      }}
+      onPointerUp={(e) => {
+        e.stopPropagation();
+        onPointerUp(e);
+      }}
+      ref={selectionBoxGraphicsRef}
+      draw={draw}
+    ></pixiGraphics>
   );
 };

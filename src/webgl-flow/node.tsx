@@ -59,7 +59,7 @@ export const NodeRenderer = memo(
         setNodeContainer(node.id, containerRef.current);
       }
     }, [node.id, setNodeContainer]);
-    console.log("render node", node.data?.label);
+    // console.log("render node", node.data?.label);
 
     // Preload the sprite if it hasn't been loaded yet
     useEffect(() => {
@@ -82,7 +82,16 @@ export const NodeRenderer = memo(
           onDragStart(node.id, e.data.global.x, e.data.global.y);
         }}
       >
+        {/* 绘制节点区域 必须是第一个节点位置 */}
         <pixiGraphics draw={draw} />
+        <pixiText
+          style={{
+            fontSize: 12,
+          }}
+          text={`${Math.round(containerRef.current?.x)} ${Math.round(
+            containerRef.current?.y
+          )}`}
+        />
         {/* <pixiSprite
           ref={spriteRef}
           eventMode={"static"}

@@ -1,6 +1,11 @@
 import { Application, extend, useApplication } from "@pixi/react";
 import { Container, Graphics, Sprite, Text, HTMLText } from "pixi.js";
-import { EControlMode, IFlowViewProps, WebGLFlowProps } from "./interface";
+import {
+  EActionType,
+  EControlMode,
+  IFlowViewProps,
+  WebGLFlowProps,
+} from "./interface";
 import { Viewport } from "pixi-viewport"; // 导入视口组件 https://viewport.pixijs.io/
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NodeRenderer } from "./node";
@@ -80,15 +85,23 @@ const FlowView = ({ nodes, edges, setNodes, controlMode }: IFlowViewProps) => {
   const nodeContainerMap = useRef<Map<string, Container>>(new Map());
   // 拖拽状态管理
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
   // ref
+  const mouseActionTypeRef = useRef<EActionType>(); // 当前的鼠标动作类型
   const nodesRef = useRef<Node[]>(nodes);
   nodesRef.current = nodes;
-  const isSelecting = useRef(false); // 是否正在创建选区
-  const selectionStart = useRef({ x: 0, y: 0 }); // 选区起始点
-  const selectionEnd = useRef({ x: 0, y: 0 }); // 选区结束点
+  const selectionStart = useRef<{ x: number; y: number } | null>(null); // 选区起始点
+  const draggingSelectingBoxStartPos = useRef<{ x: number; y: number } | null>(
+    null
+  ); // 选区框起始点
+  const selectionEnd = useRef<{ x: number; y: number } | null>(null); // 选区结束点
   const selectionBoxGraphicsRef = useRef<Graphics>(null); // 选区框容器
   const selectedNodesRef = useRef<Node[]>([]); // 选中的节点
+  // 用于记录选中节点的初始位置
+  const selectedNodesStartPosRef = useRef<
+    Map<string, { x: number; y: number }>
+  >(new Map());
+
   // 初始化视口
   useEffect(() => {
     if (viewportRef.current && app) {
@@ -114,10 +127,10 @@ const FlowView = ({ nodes, edges, setNodes, controlMode }: IFlowViewProps) => {
     });
   }, [nodes]);
 
-  const handlePointerDown = useCallback(
+  const handleStagePointerDown = useCallback(
     (e: any) => {
+      // 创建选区
       if (controlMode === EControlMode.SELECT) {
-        isSelecting.current = true;
         const worldPos = viewportRef.current?.toWorld(e.global.x, e.global.y);
         if (worldPos) {
           selectionStart.current = worldPos;
@@ -128,36 +141,90 @@ const FlowView = ({ nodes, edges, setNodes, controlMode }: IFlowViewProps) => {
   );
 
   // 处理拖拽开始
-  const handleDragStart = useCallback(
+  const handleNodeDragStart = useCallback(
     (nodeId: string, screenX: number, screenY: number) => {
       const node = nodesRef.current.find((n) => n.id === nodeId);
       if (!node || !viewportRef.current) return;
-
+      mouseActionTypeRef.current = EActionType.dragCard;
       setDraggingNodeId(nodeId);
 
       // 关键：将屏幕坐标转换为世界坐标
       const worldPos = viewportRef.current.toWorld(screenX, screenY);
 
       // 计算偏移量：世界坐标 - 节点当前位置
-      setDragOffset({
+      dragOffsetRef.current = {
         x: worldPos.x - node.position.x,
         y: worldPos.y - node.position.y,
-      });
+      };
     },
     []
   );
 
+  // 处理选区框拖拽开始 是拖拽 不是框选啊
+  const handleSelectingBoxDragStart = useCallback((e: any) => {
+    if (!viewportRef.current) return;
+
+    const worldPos = viewportRef.current.toWorld(
+      e.data.global.x,
+      e.data.global.y
+    );
+    draggingSelectingBoxStartPos.current = { ...worldPos };
+    mouseActionTypeRef.current = EActionType.moveSelectionBox;
+    // 计算偏移量：世界坐标 - 节点当前位置
+    dragOffsetRef.current = {
+      x: worldPos.x - selectionBoxGraphicsRef.current!.x,
+      y: worldPos.y - selectionBoxGraphicsRef.current!.y,
+    };
+    // 记录每个被选中节点的初始位置
+    selectedNodesRef.current.forEach((node) => {
+      const container = nodeContainerMap.current.get(node.id);
+      if (container) {
+        selectedNodesStartPosRef.current.set(node.id, {
+          x: container.x,
+          y: container.y,
+        });
+      }
+    });
+  }, []);
+
+  // 处理选区框拖拽结束
+  const handleSelectingBoxDragEnd = useCallback(() => {
+    mouseActionTypeRef.current = undefined;
+    // 更新 nodes
+    setNodes((prevNodes: Node[]) =>
+      prevNodes.map((node) => {
+        if (!selectedNodesRef.current.find((n) => n.id === node.id)) {
+          return node;
+        }
+        const container = nodeContainerMap.current.get(node.id);
+        if (container) {
+          return { ...node, position: { x: container.x, y: container.y } };
+        }
+        return node;
+      })
+    );
+  }, []);
+
   // 处理鼠标移动（在应用层面监听）
   const handlePointerMove = useCallback(
     (e: any) => {
-      // 选区
-      if (isSelecting.current) {
+      if (!viewportRef.current) return;
+      // 选区 超过一定距离才判断开启选区
+      if (
+        selectionStart.current &&
+        Math.abs(selectionStart.current.x - e.data.global.x) > 10 &&
+        Math.abs(selectionStart.current.y - e.data.global.y) > 10
+      ) {
+        mouseActionTypeRef.current = EActionType.createSelectionBox;
+        selectionBoxGraphicsRef.current!.x = 0;
+        selectionBoxGraphicsRef.current!.y = 0;
         // 获取屏幕坐标并转换为世界坐标
         const screenPos = e.data.global;
         const worldPos = viewportRef.current?.toWorld(screenPos.x, screenPos.y);
         // 绘制选区
         if (worldPos) {
           selectionBoxGraphicsRef.current!.clear();
+          selectionBoxGraphicsRef.current!.eventMode = "none"; // 禁止选区框的点击事件 不然会触发选区框的点击事件
           const x = Math.min(selectionStart.current.x, worldPos.x);
           const y = Math.min(selectionStart.current.y, worldPos.y);
           const width = Math.abs(worldPos.x - selectionStart.current.x);
@@ -167,7 +234,7 @@ const FlowView = ({ nodes, edges, setNodes, controlMode }: IFlowViewProps) => {
             .fill(SELECTION_BOX_STYLE.fill)
             .stroke(SELECTION_BOX_STYLE.stroke);
           // 计算选中的节点
-          const currentSelectedNodes = getSelectedNodes(nodes, {
+          const currentSelectedNodes = getSelectedNodes(nodesRef.current, {
             x,
             y,
             width,
@@ -205,16 +272,15 @@ const FlowView = ({ nodes, edges, setNodes, controlMode }: IFlowViewProps) => {
 
         return;
       }
-      // 拖拽
+      // 获取屏幕坐标并转换为世界坐标
+      const screenPos = e.data.global;
+      const worldPos = viewportRef.current.toWorld(screenPos.x, screenPos.y);
+
+      // 计算新位置：世界坐标 - 偏移量
+      const newX = worldPos.x - dragOffsetRef.current.x;
+      const newY = worldPos.y - dragOffsetRef.current.y;
+      // 拖拽节点
       if (draggingNodeId && viewportRef.current) {
-        // 获取屏幕坐标并转换为世界坐标
-        const screenPos = e.data.global;
-        const worldPos = viewportRef.current.toWorld(screenPos.x, screenPos.y);
-
-        // 计算新位置：世界坐标 - 偏移量
-        const newX = worldPos.x - dragOffset.x;
-        const newY = worldPos.y - dragOffset.y;
-
         // 更新容器位置
         const container = nodeContainerMap.current.get(draggingNodeId);
         if (container) {
@@ -230,16 +296,33 @@ const FlowView = ({ nodes, edges, setNodes, controlMode }: IFlowViewProps) => {
         //     )
         //   );
       }
+      // 拖拽选区框
+      if (mouseActionTypeRef.current === EActionType.moveSelectionBox) {
+        const dx = worldPos.x - draggingSelectingBoxStartPos.current!.x;
+        const dy = worldPos.y - draggingSelectingBoxStartPos.current!.y;
+        selectionBoxGraphicsRef.current!.x = newX;
+        selectionBoxGraphicsRef.current!.y = newY;
+        // 移动被选中的节点
+        selectedNodesRef.current.forEach((node) => {
+          const container = nodeContainerMap.current.get(node.id);
+          const startPos = selectedNodesStartPosRef.current.get(node.id);
+          if (container && startPos) {
+            container.x = startPos.x + dx;
+            container.y = startPos.y + dy;
+          }
+        });
+      }
     },
-    [draggingNodeId, dragOffset]
+    [draggingNodeId]
   );
 
   // 处理拖拽结束
   const handlePointerUp = useCallback(() => {
-    if (isSelecting.current) {
+    if (mouseActionTypeRef.current === EActionType.createSelectionBox) {
       const selectionRect = calculateSelectionRect(selectedNodesRef.current);
       if (selectionRect) {
         selectionBoxGraphicsRef.current!.clear();
+        selectionBoxGraphicsRef.current!.eventMode = "static";
         selectionBoxGraphicsRef
           .current!.rect(
             selectionRect.x,
@@ -252,7 +335,9 @@ const FlowView = ({ nodes, edges, setNodes, controlMode }: IFlowViewProps) => {
       } else {
         selectionBoxGraphicsRef.current!.clear();
       }
-      isSelecting.current = false;
+      selectionStart.current = null;
+      mouseActionTypeRef.current = undefined;
+      return;
     }
     if (draggingNodeId) {
       setNodes((prevNodes: Node[]) =>
@@ -267,8 +352,29 @@ const FlowView = ({ nodes, edges, setNodes, controlMode }: IFlowViewProps) => {
         })
       );
     }
+    // 清空选区
+    selectionBoxGraphicsRef.current?.clear();
+    selectionBoxGraphicsRef.current!.x = 0;
+    selectionBoxGraphicsRef.current!.y = 0;
+    selectionStart.current = null;
+    // 重置选中节点的UI 点击画布空白处
+    selectedNodesRef.current.forEach((node) => {
+      const container = nodeContainerMap.current.get(node.id);
+      if (container) {
+        const graphics = container.getChildAt(0) as Graphics;
+        graphics.clear();
+        graphics
+          .rect(0, 0, node.width as number, node.height as number)
+          .fill(DEFAULT_NODE_STYLE.fill)
+          .stroke(DEFAULT_NODE_STYLE.stroke);
+      }
+    });
+    selectedNodesRef.current = [];
     // 重置拖拽状态
     setDraggingNodeId(null);
+    mouseActionTypeRef.current = undefined;
+    draggingSelectingBoxStartPos.current = null;
+    mouseActionTypeRef.current = undefined;
   }, [draggingNodeId, setNodes]);
 
   // 在应用层面绑定全局鼠标事件
@@ -280,7 +386,7 @@ const FlowView = ({ nodes, edges, setNodes, controlMode }: IFlowViewProps) => {
     app.stage.on("pointerup", handlePointerUp);
     app.stage.on("pointerupoutside", handlePointerUp);
     app.stage.on("pointercancel", handlePointerUp);
-    app.stage.on("pointerdown", handlePointerDown);
+    app.stage.on("pointerdown", handleStagePointerDown);
 
     return () => {
       // 清理事件
@@ -326,7 +432,7 @@ const FlowView = ({ nodes, edges, setNodes, controlMode }: IFlowViewProps) => {
           <NodeRenderer
             key={node.id}
             node={node}
-            onDragStart={handleDragStart}
+            onDragStart={handleNodeDragStart}
             isDragging={draggingNodeId === node.id}
             nodePosition={node.position}
             setNodeContainer={setNodeContainer}
@@ -344,7 +450,11 @@ const FlowView = ({ nodes, edges, setNodes, controlMode }: IFlowViewProps) => {
             }
           }}
         />
-        <SelectionBox selectionBoxGraphicsRef={selectionBoxGraphicsRef} />
+        <SelectionBox
+          selectionBoxGraphicsRef={selectionBoxGraphicsRef}
+          onPointerDown={handleSelectingBoxDragStart}
+          onPointerUp={handleSelectingBoxDragEnd}
+        />
       </pixiViewport>
     </CanvasContext.Provider>
   );
