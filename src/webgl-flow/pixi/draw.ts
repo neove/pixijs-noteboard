@@ -11,6 +11,8 @@ import {
   DEFAULT_NODE_STYLE,
   SELECTED_NODE_INDEX,
   SELECTED_NODE_STYLE,
+  SELECTION_BOX_INDEX,
+  SELECTION_BOX_STYLE,
 } from "../const";
 import { Node } from "@xyflow/react";
 
@@ -75,6 +77,25 @@ export class FlowDraw {
         .fill(DEFAULT_NODE_STYLE.fill)
         .stroke(DEFAULT_NODE_STYLE.stroke);
     }
+  }
+  // 绘制选区
+  drawSelectionBox(
+    selectionBoxGraphics: Graphics,
+    {
+      x,
+      y,
+      width,
+      height,
+    }: { x: number; y: number; width: number; height: number },
+    eventMode: "none" | "static" = "none"
+  ) {
+    selectionBoxGraphics.clear();
+    selectionBoxGraphics.eventMode = eventMode; // 禁止选区框的点击事件 不然会触发选区框的点击事件
+    selectionBoxGraphics.zIndex = SELECTION_BOX_INDEX;
+    selectionBoxGraphics
+      .rect(x, y, width, height)
+      .fill(SELECTION_BOX_STYLE.fill)
+      .stroke(SELECTION_BOX_STYLE.stroke);
   }
 }
 export const flowDraw = new FlowDraw({});

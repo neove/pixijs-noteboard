@@ -31,6 +31,7 @@ import {
 } from "./utils";
 import { NodeGroupRenderer } from "./node-group";
 import { flowDraw } from "./pixi/draw";
+import { collisionTree } from "./utils/rbush";
 const BORDER = 10;
 const WORLD_WIDTH = 2000;
 const WORLD_HEIGHT = 2000;
@@ -117,6 +118,9 @@ const FlowView = ({
   onSelectionMenuPositionChange,
   onNodesUpdate,
 }: IFlowViewProps) => {
+  const initialNodes = useMemo(() => {
+    return nodes;
+  }, []);
   const viewportRef = useRef<Viewport>(null);
   const { app } = useApplication();
   // 节点图形缓存
@@ -183,6 +187,10 @@ const FlowView = ({
         y: worldPos.y - node.position.y,
       };
       flowDraw.updateSelectedNodes([node]);
+      const container = nodeContainerMap.current.get(node.id);
+      if (container) {
+        container.parent!.zIndex = SELECTED_NODE_INDEX;
+      }
     },
     []
   );
@@ -253,16 +261,20 @@ const FlowView = ({
         const worldPos = viewportRef.current?.toWorld(screenPos.x, screenPos.y);
         // 绘制选区
         if (worldPos) {
-          selectionBoxGraphicsRef.current!.clear();
-          selectionBoxGraphicsRef.current!.eventMode = "none"; // 禁止选区框的点击事件 不然会触发选区框的点击事件
           const x = Math.min(selectionStart.current.x, worldPos.x);
           const y = Math.min(selectionStart.current.y, worldPos.y);
           const width = Math.abs(worldPos.x - selectionStart.current.x);
           const height = Math.abs(worldPos.y - selectionStart.current.y);
-          selectionBoxGraphicsRef
-            .current!.rect(x, y, width, height)
-            .fill(SELECTION_BOX_STYLE.fill)
-            .stroke(SELECTION_BOX_STYLE.stroke);
+          flowDraw.drawSelectionBox(
+            selectionBoxGraphicsRef.current!,
+            {
+              x,
+              y,
+              width,
+              height,
+            },
+            "none"
+          );
           // 计算选中的节点
           const currentSelectedNodes = getSelectedNodes(
             nodesRef.current,
@@ -275,30 +287,9 @@ const FlowView = ({
             viewportRef.current as any
           );
           // 清除上一次选中的节点
-          selectedNodesRef.current.forEach((node) => {
-            const container = nodeContainerMap.current.get(node.id);
-            if (container) {
-              const graphics = container.getChildAt(0) as Graphics;
-              graphics.clear();
-              graphics
-                .rect(0, 0, node.width as number, node.height as number)
-                .fill(DEFAULT_NODE_STYLE.fill)
-                .stroke(DEFAULT_NODE_STYLE.stroke);
-            }
-          });
-
+          flowDraw.resetSelectedNodes(selectedNodesRef.current);
           // 更新选中节点的UI
-          currentSelectedNodes.forEach((node) => {
-            const container = nodeContainerMap.current.get(node.id);
-            if (container) {
-              const graphics = container.getChildAt(0) as Graphics;
-              graphics.clear();
-              graphics
-                .rect(0, 0, node.width as number, node.height as number)
-                .fill(SELECTED_NODE_STYLE.fill)
-                .stroke(SELECTED_NODE_STYLE.stroke);
-            }
-          });
+          flowDraw.updateSelectedNodes(currentSelectedNodes);
 
           // 更新选中的节点
           selectedNodesRef.current = currentSelectedNodes;
@@ -380,8 +371,6 @@ const FlowView = ({
             x: menuPos?.x as number,
             y: menuPos?.y as number,
           });
-          selectionBoxGraphicsRef.current!.clear();
-          selectionBoxGraphicsRef.current!.eventMode = "static";
           selectionBoundsRef.current = {
             x: selectionRect.x,
             y: selectionRect.y,
@@ -390,15 +379,11 @@ const FlowView = ({
             deltaX: 0,
             deltaY: 0,
           };
-          selectionBoxGraphicsRef
-            .current!.rect(
-              selectionRect.x,
-              selectionRect.y,
-              selectionRect.width,
-              selectionRect.height
-            )
-            .fill(SELECTION_BOX_STYLE.fill)
-            .stroke(SELECTION_BOX_STYLE.stroke);
+          flowDraw.drawSelectionBox(
+            selectionBoxGraphicsRef.current!,
+            selectionRect,
+            "static"
+          );
         } else {
           selectionBoxGraphicsRef.current!.clear();
         }
@@ -445,7 +430,7 @@ const FlowView = ({
           let rawParentContainer = nodeContainerMap.current.get(
             targetNode.parentId
           );
-          // 判断子节点是否完全在父节点内
+          rawParentContainer!.zIndex = 0;
           if (rawParentContainer && targetNodeContainer) {
             const parentRect = (
               rawParentContainer.getChildAt(0) as Graphics
@@ -475,10 +460,11 @@ const FlowView = ({
           );
           if (newParentContainer) {
             parentId = hoverGroupNode.id;
-            viewportRef.current!.removeChild(targetNodeContainer!);
             const childWorldPos = targetNodeContainer!.getGlobalPosition();
             newParentContainer.addChild(targetNodeContainer!);
-            const newPos = newParentContainer.toLocal(childWorldPos, app.stage);
+            const newPos = newParentContainer.toLocal(childWorldPos);
+            // 一定做先转换坐标系再 remove 否则缩放移动下会不准
+            viewportRef.current!.removeChild(targetNodeContainer!);
             targetNodeContainer!.x = newPos.x;
             targetNodeContainer!.y = newPos.y;
             targetNode.parentId = hoverGroupNode.id;
@@ -505,17 +491,7 @@ const FlowView = ({
       selectionBoxGraphicsRef.current!.y = 0;
       selectionStart.current = null;
       // 重置选中节点的UI 点击画布空白处
-      selectedNodesRef.current.forEach((node) => {
-        const container = nodeContainerMap.current.get(node.id);
-        if (container) {
-          const graphics = container.getChildAt(0) as Graphics;
-          graphics.clear();
-          graphics
-            .rect(0, 0, node.width as number, node.height as number)
-            .fill(DEFAULT_NODE_STYLE.fill)
-            .stroke(DEFAULT_NODE_STYLE.stroke);
-        }
-      });
+      flowDraw.resetSelectedNodes(selectedNodesRef.current);
       selectedNodesRef.current = [];
       // 重置拖拽状态
       flowDraw.resetSelectedNodes([draggingNodeRef.current as Node]);
@@ -574,10 +550,15 @@ const FlowView = ({
 
   // 初始化临时位置
   useEffect(() => {
-    const initialPositions: Record<string, { x: number; y: number }> = {};
-    nodes.forEach((node) => {
-      initialPositions[node.id] = { ...node.position };
-    });
+    collisionTree.bulkInsertOrUpdate(
+      nodes.map((i) => ({
+        id: i.id,
+        x: i.position.x,
+        y: i.position.y,
+        width: i.width as number,
+        height: i.height as number,
+      }))
+    );
   }, [nodes]);
 
   // 在应用层面绑定全局鼠标事件
@@ -612,8 +593,8 @@ const FlowView = ({
   }, [draggingNodeRef.current, nodes]);
   // 非分组节点
   const notChildNodes = useMemo(() => {
-    return nodes.filter((i) => !i.parentId);
-  }, [nodes]);
+    return initialNodes.filter((i) => !i.parentId);
+  }, [initialNodes]);
   return (
     <CanvasContext.Provider value={{ app, viewport: viewportRef.current }}>
       <pixiViewport

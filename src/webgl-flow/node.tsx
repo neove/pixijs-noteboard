@@ -161,7 +161,7 @@ export const NodeRenderer = memo(
           }}
           text={`${Math.round(node.position.x)} ${Math.round(node.position.y)}`}
         />
-        {/* <pixiText
+        <pixiText
           style={{
             fontSize: 12,
           }}
@@ -174,7 +174,7 @@ export const NodeRenderer = memo(
           }}
           y={40}
           text={`width:${node.width} height:${node.height}`}
-        /> */}
+        />
         {isGroupNode && renderGroupDragHandle()}
         {node.type === "NodeGroup" ? renderChild() : null}
       </pixiContainer>
